@@ -1,8 +1,9 @@
 import numpy as np
+import os
 from torch.utils.data import Dataset
 
 class CellsDataset(Dataset):
-    def __init__(self, cells):
+    def __init__(self, cells, path):
         """
         Initalize the dataset.
         Cells is a list of cells with the columns: image_id, cell_id, centroid-0, centroid-1.
@@ -10,19 +11,54 @@ class CellsDataset(Dataset):
         super().__init__()
         # Complete here the initlization of the dataset
         # HINT: Use caching for faster implementation
-
+        self.cells = cells
+        self.path = path
         
+        self.image_cache = {}
+        self.cells2labels_cache = {}
+        self.seg_cache = {}
+        
+                
     def __len__(self):
         """
          Return the size of the dataset
         """
+        return len(self.cells)
 
     def __getitem__(self, i):
         """
         Return a crop of all the proteins around the ith cell in the data and its cell type. The crop should be of size 60x60 pixels.
         """
-        # Complete the function such that it'll return the ith cell's image, it's segmentation and its label.
-        # The returned img should be a crop around the center of the ith cell.
-        # The returned img should be shaped (H, W, C). where C represents the number of channels in image_path. H, W should be set to 60 pixels. such that the size of the crop will be 60x0px
-        # The returned segmentation should be a crop (H, W) around the center of the ith cell. the values of the segmentation should be 1 where the cell exists and 0 otherwise.
-        # Note that any cell types which is undefined (i.e. negative) should be set to 15 (15 is a new cell types we are defining here).
+        
+        cell = self.cells.iloc[i]
+        image_id = cell['image_id']
+        path = self.path
+        
+        if image_id in self.image_cache:
+            image = self.image_cache[image_id]
+            cells2labels = self.cells2labels_cache[image_id]
+            seg = self.seg_cache[image_id]
+        else:
+            image = np.load(f"{path}/data/images/{image_id}.npz")["data"]
+            cells2labels = np.load(f"{path}/cells2labels/{image_id}.npz")["data"]
+            seg = np.load(f"{path}/cells/{image_id}.npz")["data"]
+            self.image_cache[image_id] = image         
+            self.cells2labels_cache[image_id] = cells2labels
+            self.seg_cache[image_id] = seg
+        
+        cell_id = cell['cell_id']
+        label = cells2labels[cell_id]
+
+        if label < 0:
+            label = 15
+        else:
+            label = label
+        
+        size_px=60
+        x_location, y_location = int(cell['centroid-0']), int(cell['centroid-1'])
+        crop = image[x_location-size_px//2:x_location+size_px//2,
+            y_location-size_px//2:y_location+size_px//2, :]
+        seg_crop = seg[x_location-size_px//2:x_location+size_px//2,
+            y_location-size_px//2:y_location+size_px//2]
+        
+        return crop,seg_crop == cell_id,label
